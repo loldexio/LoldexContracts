@@ -103,6 +103,92 @@ contract Exchange is Ownable {
         return _tokenBalance[msg.sender][tokenSymbolIndex];
     }
 
+    // Token -> Ether
+    function TokenToEther(string memory symbolName, uint256 priceInWei, uint amount) public {
+        uint16 tokenSymbolIndex = getSymbolIndexOrThrow(symbolName);
+        uint256 amountOfTokenAvailable = amount;
+        uint256 amountOfEtherNeeded = 0;
+        if(
+            _tokens[tokenSymbolIndex]._totalBuyAmount == 0 //If there are no one want to trade
+            || _tokens[tokenSymbolIndex]._currentBuyPrice < priceInWei // or the current price is lower than the price wanted
+        ) {
+            createRequestForETHToToken();
+        } else {
+            uint256 amountOfEtherAvailable = 0;
+            uint256 currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
+            uint256 currentPos;
+            while(currentPrice >= priceInWei && amountOfTokenAvailable > 0) {
+                currentPos = _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerPos;
+                while(
+                    currentPos <= _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerLength
+                    && amountOfTokenAvailable > 0
+                    ) {
+                        uint256 volumeOfPrice = _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount;
+                        // Partial fulfills (token have > token want)
+                        if(volumeOfPrice <= amountOfTokenAvailable) {
+                            amountOfEtherAvailable = volumeOfPrice.mul(currentPrice);
+                            _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(volumeOfPrice);
+                            _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex]
+                                = _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex].add(volumeOfPrice);
+                            _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount = 0;
+                            _ETHBalance[msg.sender] = _ETHBalance[msg.sender].add(amountOfEtherAvailable);
+                            _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerPos = _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerPos.add(1);
+                            amountOfTokenAvailable = amountOfTokenAvailable.sub(volumeOfPrice);
+                        } else {
+                            require(volumeOfPrice > amountOfTokenAvailable);
+                            amountOfEtherNeeded = volumeOfPrice.mul(currentPrice);
+                            _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(volumeOfPrice);
+                            _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex]
+                                = _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex].add(volumeOfPrice);
+                            _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount =
+                                _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount.sub(amountOfTokenAvailable);
+                            _ETHBalance[msg.sender] = _ETHBalance[msg.sender].add(amountOfEtherNeeded);
+                            amountOfTokenAvailable = 0;
+                        }
+                        if(
+                            currentPos == _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerLength
+                            && _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount == 0
+                            ) {
+                                _tokens[tokenSymbolIndex]._totalBuyAmount = _tokens[tokenSymbolIndex]._totalBuyAmount.sub(1);
+                                if(currentPrice == _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._lowerPrice || currentPrice == _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._higherPrice) {
+                                    _tokens[tokenSymbolIndex]._currentBuyPrice = 0;
+                                } else {
+                                    _tokens[tokenSymbolIndex]._currentBuyPrice = _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._lowerPrice;
+                                    _tokens[tokenSymbolIndex]._buyIndex[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._lowerPrice]._higherPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
+                                }
+
+                        }
+                        currentPos = currentPos.add(1);
+                    }
+                currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
+            }
+            if(amountOfTokenAvailable > 0) {
+                createRequestForTokenToETH();
+            }
+        }
+    }
+
+    // Ether -> Token
+    function ETHToToken(string memory symbolName, uint256 priceInWei, uint amount) public {
+        uint16 tokenSymbolIndex = getSymbolIndexOrThrow(symbolName);
+        uint256 amountOfTokenNeeded = amount;
+        uint256 amountOfEtherNeeded = 0;
+
+        if(
+            _tokens[tokenSymbolIndex]._totalSellAmount == 0 //If there are no one want to trade
+            || _tokens[tokenSymbolIndex]._currentSellPrice > priceInWei // or the current price is higher than the price wanted
+        ) {
+            createRequestForETHToToken();
+        } else {
+            uint256 amountOfEtherAvailable = 0;
+            uint256 currentPrice = _tokens[tokenSymbolIndex]._currentSellPrice;
+            uint256 currentPos;
+            // TODO: based on the Token to ETH route to continue working
+
+        }
+    }
+
+
     // Helper functions
     function getSymbolIndex(string memory symbolName) internal returns (uint16) {
         for (uint16 i = 1; i <= _tokenSymbolIndex; i++) {
@@ -118,6 +204,10 @@ contract Exchange is Ownable {
         require(index > 0);
         return index;
     }
+
+    function createRequestForETHToToken() internal {}
+
+    function createRequestForETHToToken() internal {}
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         bytes memory _a = bytes(a);
