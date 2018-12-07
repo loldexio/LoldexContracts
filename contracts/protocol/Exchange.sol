@@ -104,7 +104,7 @@ contract Exchange is Ownable {
     }
 
     // Token -> Ether
-    function TokenToEther(string memory symbolName, uint256 priceInWei, uint amount) public {
+    function TokenToETH(string memory symbolName, uint256 priceInWei, uint amount) public {
         uint16 tokenSymbolIndex = getSymbolIndexOrThrow(symbolName);
         uint256 amountOfTokenAvailable = amount;
         uint256 amountOfEtherNeeded = 0;
@@ -112,7 +112,7 @@ contract Exchange is Ownable {
             _tokens[tokenSymbolIndex]._totalBuyAmount == 0 //If there are no one want to trade
             || _tokens[tokenSymbolIndex]._currentBuyPrice < priceInWei // or the current price is lower than the price wanted
         ) {
-            createRequestForETHToToken();
+            createRequestForTokenToETH();
         } else {
             uint256 amountOfEtherAvailable = 0;
             uint256 currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
@@ -207,7 +207,7 @@ contract Exchange is Ownable {
 
     function createRequestForETHToToken() internal {}
 
-    function createRequestForETHToToken() internal {}
+    function createRequestForTokenToETH() internal {}
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         bytes memory _a = bytes(a);
