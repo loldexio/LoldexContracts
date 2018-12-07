@@ -49,5 +49,19 @@ contract Exchange is Ownable {
     mapping (address => uint256) _ETHBalance;
     mapping (address => mapping (uint16 => uint256)) _tokenBalance;
 
+    // Withdrawal and Deposit ETH
+    function depositETH() public payable {
+        _ETHBalance[msg.sender] = _ETHBalance[msg.sender].add(msg.value);
+    }
+
+    function withdrawETH(uint256 amountInWei) public {
+        require(_ETHBalance[msg.sender] >= amountInWei);
+        _ETHBalance[msg.sender] = _ETHBalance[msg.sender].sub(amountInWei);
+        msg.sender.transfer(amountInWei);
+    }
+
+    function getETHBalance() public view returns (uint256) {
+        return _ETHBalance[msg.sender];
+    }
 
 }
