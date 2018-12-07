@@ -64,4 +64,40 @@ contract Exchange is Ownable {
         return _ETHBalance[msg.sender];
     }
 
+    // Add new token to LoLDex
+    function hasToken(string memory symbolName) public view returns (bool) {
+        uint16 index = getSymbolIndex(symbolName);
+        if (index == 0) {
+            return false;
+        }
+        return true;
+    }
+    
+    function addNewToken(address contractAddress, string memory symbolName) public onlyOwner {
+        require(!hasToken(symbolName));
+        _tokenSymbolIndex++;
+        _tokens[_tokenSymbolIndex]._symbolName = symbolName;
+        _tokens[_tokenSymbolIndex]._contractAddress = contractAddress;
+    }
+
+    // Helper functions
+    function getSymbolIndex(string memory symbolName) internal returns (uint16) {
+        for (uint16 i = 1; i <= _tokenSymbolIndex; i++) {
+            if (stringsEqual(_tokens[i]._symbolName, symbolName)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    function stringsEqual(string memory a, string memory b) internal returns (bool) {
+        bytes memory _a = bytes(a);
+        bytes memory _b = bytes(b);
+        if (keccak256(_a) != keccak256(_b)) { return false; }
+        return true;
+    }
+
+
+
+
 }
