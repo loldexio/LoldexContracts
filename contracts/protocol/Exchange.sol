@@ -168,6 +168,35 @@ contract Exchange is Ownable {
         }
     }
 
+    function getTokenToEtherIndexer(string memory symbolName) public view returns (uint256[] memory, uint256[] memory) {
+        uint16 tokenNameIndex = getSymbolIndexOrThrow(symbolName);
+        uint256[] memory arrPricesSell = new uint256[](_tokens[tokenNameIndex]._totalSellAmount);
+        uint256[] memory arrVolumesSell = new uint256[](_tokens[tokenNameIndex]._totalSellAmount);
+        uint256 sellWhilePrice = _tokens[tokenNameIndex]._currentSellPrice;
+        uint256 sellCounter = 0;
+        if (_tokens[tokenNameIndex]._currentSellPrice > 0) {
+            while (sellWhilePrice <= _tokens[tokenNameIndex]._highestSellPrice) {
+                arrPricesSell[sellCounter] = sellWhilePrice;
+                uint256 sellVolumeAtPrice = 0;
+                uint256 sellOffersKey = 0;
+                sellOffersKey = _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._indexerPos;
+                while (sellOffersKey <= _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._indexerLength) {
+                    sellVolumeAtPrice += _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._swapWrappers[sellOffersKey]._tokenAmount;
+                    sellOffersKey = sellOffersKey.add(1);
+                }
+                arrVolumesSell[sellCounter] = sellVolumeAtPrice;
+                if (_tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._higherPrice == 0) {
+                    break;
+                }
+                else {
+                    sellWhilePrice = _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._higherPrice;
+                }
+                sellCounter++;
+            }
+        }
+        return (arrPricesSell, arrVolumesSell);
+    }
+
     // Ether -> Token
     function ETHToToken(string memory symbolName, uint256 priceInWei, uint amount) public {
         uint16 tokenSymbolIndex = getSymbolIndexOrThrow(symbolName);
