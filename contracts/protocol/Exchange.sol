@@ -112,7 +112,7 @@ contract Exchange is Ownable {
             _tokens[tokenSymbolIndex]._totalBuyAmount == 0 //If there are no one want to trade
             || _tokens[tokenSymbolIndex]._currentBuyPrice < priceInWei // or the current price is lower than the price wanted
         ) {
-            createRequestForTokenToETH();
+            createRequestForTokenToETH(symbolName, tokenSymbolIndex, priceInWei, amountOfTokenAvailable, amountOfEtherNeeded);
         } else {
             uint256 amountOfEtherAvailable = 0;
             uint256 currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
@@ -163,7 +163,7 @@ contract Exchange is Ownable {
                 currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
             }
             if(amountOfTokenAvailable > 0) {
-                createRequestForTokenToETH();
+                createRequestForTokenToETH(symbolName, tokenSymbolIndex, priceInWei, amountOfTokenAvailable, amountOfEtherNeeded);
             }
         }
     }
@@ -205,9 +205,15 @@ contract Exchange is Ownable {
         return index;
     }
 
-    function createRequestForETHToToken() internal {}
+    // In case the order cannot be fulfilled at the execute moment
+    function createRequestForTokenToETH(string memory symbolName, uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amountOfTokenAvailable, uint256 amountOfEtherNeeded) internal {
+        amountOfEtherNeeded = amountOfTokenAvailable.mul(priceInWei);
+        _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(amountOfTokenAvailable);
 
-    function createRequestForTokenToETH() internal {}
+        createTokenToETHOffer();
+    }
+
+    function createRequestForETHToToken() internal {}
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         bytes memory _a = bytes(a);
