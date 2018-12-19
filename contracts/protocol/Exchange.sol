@@ -112,7 +112,7 @@ contract Exchange is Ownable {
             _tokens[tokenSymbolIndex]._totalBuyAmount == 0 //If there are no one want to trade
             || _tokens[tokenSymbolIndex]._currentBuyPrice < priceInWei // or the current price is lower than the price wanted
         ) {
-            createRequestForTokenToETH(symbolName, tokenSymbolIndex, priceInWei, amountOfTokenAvailable, amountOfEtherNeeded);
+            createRequestForTokenToETH(tokenSymbolIndex, priceInWei, amountOfTokenAvailable, amountOfEtherNeeded);
         } else {
             uint256 amountOfEtherAvailable = 0;
             uint256 currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
@@ -163,7 +163,7 @@ contract Exchange is Ownable {
                 currentPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
             }
             if(amountOfTokenAvailable > 0) {
-                createRequestForTokenToETH(symbolName, tokenSymbolIndex, priceInWei, amountOfTokenAvailable, amountOfEtherNeeded);
+                createRequestForTokenToETH(tokenSymbolIndex, priceInWei, amountOfTokenAvailable, amountOfEtherNeeded);
             }
         }
     }
@@ -207,13 +207,55 @@ contract Exchange is Ownable {
             _tokens[tokenSymbolIndex]._totalSellAmount == 0 //If there are no one want to trade
             || _tokens[tokenSymbolIndex]._currentSellPrice > priceInWei // or the current price is higher than the price wanted
         ) {
-            createRequestForETHToToken();
+            createRequestForETHToToken(tokenSymbolIndex, priceInWei, amountOfTokenNeeded, amountOfEtherNeeded);
         } else {
             uint256 amountOfEtherAvailable = 0;
             uint256 currentPrice = _tokens[tokenSymbolIndex]._currentSellPrice;
             uint256 currentPos;
             // TODO: based on the Token to ETH route to continue working
+            while (currentPrice <= priceInWei && amountOfTokenNeeded > 0) {
+                currentPos = _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._indexerPos;
+                while (currentPos <= _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._indexerLength && amountOfTokenNeeded > 0) {
+                    uint256 volumeAtPriceFromAddress = _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount;
+                    if (volumeAtPriceFromAddress <= amountOfTokenNeeded) {
+                        amountOfEtherAvailable = volumeAtPriceFromAddress.mul(currentPrice);
+                        _ETHBalance[msg.sender] = _ETHBalance[msg.sender].sub(amountOfEtherAvailable);
+                        _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].add(volumeAtPriceFromAddress);
+                        _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount = 0;
+                        _ETHBalance[_tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._owner] = _ETHBalance[_tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._owner].add(amountOfEtherAvailable);
+                        _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._indexerPos = _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._indexerPos.add(1);
 
+                        amountOfTokenNeeded -= volumeAtPriceFromAddress;
+                    } else {
+                        require(_tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount > amountOfTokenNeeded);
+
+                        amountOfEtherNeeded = amountOfEtherNeeded.mul(currentPrice);
+                        _ETHBalance[msg.sender] = _ETHBalance[msg.sender].sub(amountOfEtherNeeded);
+
+                        _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount = _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount.sub(amountOfTokenNeeded);
+                        _ETHBalance[_tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._owner] = _ETHBalance[_tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._owner].add(amountOfEtherNeeded);
+                        _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].add(amountOfTokenNeeded);
+                        amountOfTokenNeeded = 0;
+                    }
+                    if (
+                        currentPos == _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._indexerLength &&
+                        _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount == 0
+                    ) {
+                        _tokens[tokenSymbolIndex]._totalSellAmount = _tokens[tokenSymbolIndex]._totalSellAmount.sub(1);
+                        if (currentPrice == _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._higherPrice || _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._higherPrice == 0) {
+                            _tokens[tokenSymbolIndex]._currentSellPrice = 0;
+                        } else {
+                            _tokens[tokenSymbolIndex]._currentSellPrice = _tokens[tokenSymbolIndex]._sellIndex[currentPrice]._higherPrice;
+                            _tokens[tokenSymbolIndex]._sellIndex[_tokens[tokenSymbolIndex]._sellIndex[currentPrice]._higherPrice]._lowerPrice = 0;
+                        }
+                    }
+                    currentPos = currentPos.add(1);
+                }
+                currentPrice = _tokens[tokenSymbolIndex]._currentSellPrice;
+            }
+            if (amountOfTokenNeeded > 0) {
+                createRequestForETHToToken(tokenSymbolIndex, priceInWei, amountOfTokenNeeded, amountOfEtherNeeded);
+            }
         }
     }
 
@@ -235,7 +277,7 @@ contract Exchange is Ownable {
     }
 
     // In case the order cannot be fulfilled at the execute moment
-    function createRequestForTokenToETH(string memory symbolName, uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amountOfTokenAvailable, uint256 amountOfEtherNeeded) internal {
+    function createRequestForTokenToETH(uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amountOfTokenAvailable, uint256 amountOfEtherNeeded) internal {
         amountOfEtherNeeded = amountOfTokenAvailable.mul(priceInWei);
         _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(amountOfTokenAvailable);
 
@@ -299,7 +341,12 @@ contract Exchange is Ownable {
         }
     }
 
-    function createRequestForETHToToken() internal {}
+    function createRequestForETHToToken(string memory symbolName, uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amountOfTokenAvailable, uint256 amountOfEtherNeeded) internal {
+        amountOfEtherNeeded = amountOfTokenAvailable.mul(priceInWei);
+        _ETHBalance[msg.sender] = _ETHBalance[msg.sender].sub(amountOfEtherNeeded);
+
+        //createETHToTokenOffer(tokenSymbolIndex, priceInWei, amountOfTokenAvailable, msg.sender);
+    }
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         bytes memory _a = bytes(a);
