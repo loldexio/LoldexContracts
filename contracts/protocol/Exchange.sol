@@ -39,7 +39,7 @@ contract Exchange is Ownable {
 
         mapping (uint256 => Indexer) _sellIndex;
         uint256 _currentSellPrice;
-        uint256 _lowestSellPrice;
+        uint256 _highestSellPrice;
         uint256 _totalSellAmount;
     }
 
@@ -210,7 +210,64 @@ contract Exchange is Ownable {
         amountOfEtherNeeded = amountOfTokenAvailable.mul(priceInWei);
         _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(amountOfTokenAvailable);
 
-        createTokenToETHOffer();
+        createTokenToETHOffer(tokenSymbolIndex, priceInWei, amountOfTokenAvailable, msg.sender);
+    }
+
+    function createTokenToETHOffer(uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amount, address sellerAddress) internal {
+        _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._indexerLength = _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._indexerLength.add(1);
+        _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._swapWrappers[_tokens[tokenSymbolIndex]._sellIndex[priceInWei]._indexerLength] = swapWrapper(amount, sellerAddress);
+
+        if (_tokens[tokenSymbolIndex]._sellIndex[priceInWei]._indexerLength == 1) {
+            _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._indexerPos = 1;
+            _tokens[tokenSymbolIndex]._totalSellAmount = _tokens[tokenSymbolIndex]._totalSellAmount.add(1);
+        
+            uint curSellPrice = _tokens[tokenSymbolIndex]._currentSellPrice;
+            uint highestSellPrice = _tokens[tokenSymbolIndex]._highestSellPrice;
+            // Case 1 & 2: New Sell Offer is the First Order Entered or Highest Entry  
+            if (highestSellPrice == 0 || highestSellPrice < priceInWei) {
+                // Case 1: First Entry. No Sell Orders Exist `highestSellPrice == 0`. Insert New (First) Order
+                if (curSellPrice == 0) {
+                    _tokens[tokenSymbolIndex]._currentSellPrice = priceInWei;
+                    _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._higherPrice = 0;
+                    _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._lowerPrice = 0;
+                // Case 2: New Sell Offer is the Highest Entry (Higher Than Highest Existing Sell Price) `highestSellPrice < priceInWei`
+                } else {
+                    _tokens[tokenSymbolIndex]._sellIndex[highestSellPrice]._higherPrice = priceInWei;
+                    _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._lowerPrice = highestSellPrice;
+                    _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._higherPrice = 0;
+                }
+                _tokens[tokenSymbolIndex]._highestSellPrice = priceInWei;
+            }
+            // Case 3: New Sell Offer is the Lowest Sell Price (First Entry). Not Need Find Right Entry Location
+            else if (curSellPrice > priceInWei) {
+                _tokens[tokenSymbolIndex]._sellIndex[curSellPrice]._lowerPrice = priceInWei;
+                _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._higherPrice = curSellPrice;
+                _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._lowerPrice = 0;
+                _tokens[tokenSymbolIndex]._currentSellPrice = priceInWei;
+            }
+            else {
+                uint sellPrice = _tokens[tokenSymbolIndex]._currentSellPrice;
+                bool found = false;
+                // Loop Until Find
+                while (sellPrice > 0 && !found) {
+                    if (
+                        sellPrice < priceInWei &&
+                        _tokens[tokenSymbolIndex]._sellIndex[sellPrice]._higherPrice > priceInWei
+                    ) {
+                        _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._lowerPrice = sellPrice;
+                        _tokens[tokenSymbolIndex]._sellIndex[priceInWei]._higherPrice = _tokens[tokenSymbolIndex]._sellIndex[sellPrice]._higherPrice;
+                        _tokens[tokenSymbolIndex]._sellIndex[_tokens[tokenSymbolIndex]._sellIndex[sellPrice]._higherPrice]._lowerPrice = priceInWei;
+                        _tokens[tokenSymbolIndex]._sellIndex[sellPrice]._higherPrice = priceInWei;
+                        // Found Location to Insert New Entry where:
+                        // - Lower Sell Prices < Offer Sell Price, and 
+                        // - Offer Sell Price < Entry Price
+                        found = true;
+                    }
+                    // Set Lowest Sell Price to the Order Book's Lowest Buy Price's Higher Entry Price on Each Iteration
+                    sellPrice = _tokens[tokenSymbolIndex]._sellIndex[sellPrice]._higherPrice;
+                }
+            }
+        }
     }
 
     function createRequestForETHToToken() internal {}
