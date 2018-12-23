@@ -8,6 +8,10 @@ contract Exchange is Ownable {
     using SafeMath for uint256;
     string constant public VERSION = "1.0.0-alpha";
 
+    address public FEECONTRACTADDRESS;
+
+    uint8 public FEEPERCENTAGE;
+
     struct swapWrapper {
         uint256 _tokenAmount;
         address _owner;
@@ -48,6 +52,18 @@ contract Exchange is Ownable {
 
     mapping (address => uint256) _ETHBalance;
     mapping (address => mapping (uint16 => uint256)) _tokenBalance;
+
+    // Change fee contract address
+    function changeFeeContractAddress(address newAddress, string memory newName) public onlyOwner {
+        FEECONTRACTADDRESS = newAddress;
+        _tokens[0]._contractAddress = newAddress;
+        _tokens[0]._symbolName = newName;
+    }
+
+    // Change Fee percentage
+    function changeFeePercentage(uint8 newPercentage) public onlyOwner {
+        FEEPERCENTAGE = newPercentage;
+    }
 
     // Withdrawal and Deposit ETH
     function depositETH() public payable {
@@ -124,9 +140,11 @@ contract Exchange is Ownable {
                     && amountOfTokenAvailable > 0
                     ) {
                         uint256 volumeOfPrice = _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount;
+                        uint256 feeAmount;
                         // Partial fulfills (token have > token want)
                         if(volumeOfPrice <= amountOfTokenAvailable) {
                             amountOfEtherAvailable = volumeOfPrice.mul(currentPrice);
+                            amountOfEtherAvailable = amountOfEtherAvailable.sub(feeAmount);
                             _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(volumeOfPrice);
                             _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex]
                                 = _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex].add(volumeOfPrice);
@@ -134,9 +152,11 @@ contract Exchange is Ownable {
                             _ETHBalance[msg.sender] = _ETHBalance[msg.sender].add(amountOfEtherAvailable);
                             _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerPos = _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerPos.add(1);
                             amountOfTokenAvailable = amountOfTokenAvailable.sub(volumeOfPrice);
+                            //ETHToToken(_tokens[0]._symbolName, feeAmount, 1);
                         } else {
                             require(volumeOfPrice > amountOfTokenAvailable);
                             amountOfEtherNeeded = volumeOfPrice.mul(currentPrice);
+                            amountOfEtherNeeded = amountOfEtherNeeded.sub(feeAmount);
                             _tokenBalance[msg.sender][tokenSymbolIndex] = _tokenBalance[msg.sender][tokenSymbolIndex].sub(volumeOfPrice);
                             _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex]
                                 = _tokenBalance[_tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._owner][tokenSymbolIndex].add(volumeOfPrice);
@@ -144,6 +164,7 @@ contract Exchange is Ownable {
                                 _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._swapWrappers[currentPos]._tokenAmount.sub(amountOfTokenAvailable);
                             _ETHBalance[msg.sender] = _ETHBalance[msg.sender].add(amountOfEtherNeeded);
                             amountOfTokenAvailable = 0;
+                            //ETHToToken(_tokens[0]._symbolName, feeAmount, 1);
                         }
                         if(
                             currentPos == _tokens[tokenSymbolIndex]._buyIndex[currentPrice]._indexerLength
@@ -429,8 +450,6 @@ contract Exchange is Ownable {
             }
         }
     }
-
-
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         bytes memory _a = bytes(a);
