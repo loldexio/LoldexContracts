@@ -181,7 +181,7 @@ contract Exchange is Ownable {
                 uint256 sellOffersKey = 0;
                 sellOffersKey = _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._indexerPos;
                 while (sellOffersKey <= _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._indexerLength) {
-                    sellVolumeAtPrice += _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._swapWrappers[sellOffersKey]._tokenAmount;
+                    sellVolumeAtPrice = sellVolumeAtPrice.add(_tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._swapWrappers[sellOffersKey]._tokenAmount);
                     sellOffersKey = sellOffersKey.add(1);
                 }
                 arrVolumesSell[sellCounter] = sellVolumeAtPrice;
@@ -191,10 +191,42 @@ contract Exchange is Ownable {
                 else {
                     sellWhilePrice = _tokens[tokenNameIndex]._sellIndex[sellWhilePrice]._higherPrice;
                 }
-                sellCounter++;
+                sellCounter = sellCounter.add(1);
             }
         }
         return (arrPricesSell, arrVolumesSell);
+    }
+
+    function getEtherToTokenIndexer(string memory symbolName) public view returns (uint256[] memory, uint256[] memory) {
+        uint16 tokenNameIndex = getSymbolIndexOrThrow(symbolName);
+        uint256[] memory arrPricesBuy = new uint256[](_tokens[tokenNameIndex]._totalBuyAmount);
+        uint256[] memory arrVolumesBuy = new uint256[](_tokens[tokenNameIndex]._totalBuyAmount);
+        uint256 whilePrice = _tokens[tokenNameIndex]._lowestBuyPrice;
+        uint256 counter = 0;
+        if (_tokens[tokenNameIndex]._currentBuyPrice > 0) {
+            while (whilePrice <= _tokens[tokenNameIndex]._currentBuyPrice) {
+                arrPricesBuy[counter] = whilePrice;
+                uint256 buyVolumeAtPrice = 0;
+                uint256 buyOffersKey = 0;
+
+                // Obtain the Volume from Summing all Offers Mapped to a Single Price inside the Buy Order Book
+                buyOffersKey = _tokens[tokenNameIndex]._buyIndex[whilePrice]._indexerPos;
+                while (buyOffersKey <= _tokens[tokenNameIndex]._buyIndex[whilePrice]._indexerLength) {
+                    buyVolumeAtPrice = buyVolumeAtPrice.add(_tokens[tokenNameIndex]._buyIndex[whilePrice]._swapWrappers[buyOffersKey]._tokenAmount);
+                    buyOffersKey = buyOffersKey.add(1);
+                }
+                arrVolumesBuy[counter] = buyVolumeAtPrice;
+                // Next whilePrice
+                if (whilePrice == _tokens[tokenNameIndex]._buyIndex[whilePrice]._higherPrice) {
+                    break;
+                }
+                else {
+                    whilePrice = _tokens[tokenNameIndex]._buyIndex[whilePrice]._higherPrice;
+                }
+                counter = counter.add(1);
+            }
+        }
+        return (arrPricesBuy, arrVolumesBuy);
     }
 
     // Ether -> Token
@@ -341,12 +373,64 @@ contract Exchange is Ownable {
         }
     }
 
-    function createRequestForETHToToken(string memory symbolName, uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amountOfTokenAvailable, uint256 amountOfEtherNeeded) internal {
+    function createRequestForETHToToken(uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amountOfTokenAvailable, uint256 amountOfEtherNeeded) internal {
         amountOfEtherNeeded = amountOfTokenAvailable.mul(priceInWei);
         _ETHBalance[msg.sender] = _ETHBalance[msg.sender].sub(amountOfEtherNeeded);
 
-        //createETHToTokenOffer(tokenSymbolIndex, priceInWei, amountOfTokenAvailable, msg.sender);
+        createETHToTokenOffer(tokenSymbolIndex, priceInWei, amountOfTokenAvailable, msg.sender);
     }
+
+    function createETHToTokenOffer(uint16 tokenSymbolIndex, uint256 priceInWei, uint256 amount, address sellerAddress) internal {
+        _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._indexerLength = _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._indexerLength.add(1);
+        _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._swapWrappers[_tokens[tokenSymbolIndex]._buyIndex[priceInWei]._indexerLength] = swapWrapper(amount, sellerAddress);
+
+        if (_tokens[tokenSymbolIndex]._buyIndex[priceInWei]._indexerLength == 1) {
+            _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._indexerPos = 1;
+            _tokens[tokenSymbolIndex]._totalBuyAmount = _tokens[tokenSymbolIndex]._totalBuyAmount.add(1);
+
+            uint curBuyPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
+            uint lowestBuyPrice = _tokens[tokenSymbolIndex]._lowestBuyPrice;
+
+            if (lowestBuyPrice == 0 || lowestBuyPrice > priceInWei) {
+                if (curBuyPrice == 0) {
+                    _tokens[tokenSymbolIndex]._currentBuyPrice = priceInWei;
+                    _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._higherPrice = priceInWei;
+                    _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._lowerPrice = 0;
+                } else {
+                    _tokens[tokenSymbolIndex]._buyIndex[lowestBuyPrice]._lowerPrice = priceInWei;
+                    _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._higherPrice = lowestBuyPrice;
+                    _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._lowerPrice = 0;
+                }
+                _tokens[tokenSymbolIndex]._lowestBuyPrice = priceInWei;
+            }
+            // Case 3: New Buy Offer is the Highest Buy Price (Last Entry). Not Need Find Right Entry Location
+            else if (curBuyPrice < priceInWei) {
+                _tokens[tokenSymbolIndex]._buyIndex[curBuyPrice]._higherPrice = priceInWei;
+                _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._higherPrice = priceInWei;
+                _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._lowerPrice = curBuyPrice;
+                _tokens[tokenSymbolIndex]._currentBuyPrice = priceInWei;
+            }
+            else {
+                uint256 buyPrice = _tokens[tokenSymbolIndex]._currentBuyPrice;
+                bool found = false;
+                while (buyPrice > 0 && !found) {
+                    if (
+                        buyPrice < priceInWei &&
+                        _tokens[tokenSymbolIndex]._buyIndex[buyPrice]._higherPrice > priceInWei
+                    ) {
+                        _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._lowerPrice = buyPrice;
+                        _tokens[tokenSymbolIndex]._buyIndex[priceInWei]._higherPrice = _tokens[tokenSymbolIndex]._buyIndex[buyPrice]._higherPrice;
+                        _tokens[tokenSymbolIndex]._buyIndex[_tokens[tokenSymbolIndex]._buyIndex[buyPrice]._higherPrice]._lowerPrice = priceInWei;
+                        _tokens[tokenSymbolIndex]._buyIndex[buyPrice]._higherPrice = priceInWei;
+                        found = true;
+                    }
+                    buyPrice = _tokens[tokenSymbolIndex]._buyIndex[buyPrice]._lowerPrice;
+                }
+            }
+        }
+    }
+
+
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         bytes memory _a = bytes(a);
